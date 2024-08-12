@@ -1,6 +1,13 @@
 /**
- * node command line tool. Checks if the recorded title (in csv) of a profile with a linkedin url column matches their most recent title on LinkedIn
- * reports which ones do not match for manual updating
+ * node command line tool. 
+ * 
+ * Checks if the recorded company (in csv) of a profile with a 
+ * linkedin url column matches their most recent title on LinkedIn
+ * and checks if their most recent role has ended on LinkedIn.
+ * Reports which roles do not match for manual updating. Result will 
+ * be printed to console and can be directly pasted into doc.
+ * 
+ * "" for no new role, "new role" for new role.
  */
 
 const { chromium } = require("playwright");
@@ -11,8 +18,6 @@ const LI_LOGIN_URL = "https://www.linkedin.com/login";
 
 //extract cmnd line arguments (ONLY WORKS FOR RYAN FOR DEV, RM STRING LITERAL FOR PROD)
 const csvPath = `/Users/ryanchitwood/Downloads/${process.argv[2]}`;
-
-const duplicates = [];
 
 if (csvPath === '--help'){
     console.log("Script will iterate through CSV, uploading profiles to designated search (likely path: /users/username/Downloads/csvName.csv). Usage: node newRoleCheck.js searchName path/to/csv");
@@ -50,29 +55,13 @@ function parseCsvLinks(path){
             .on('data', (row) => {
                 const url = row['LinkedIn URL'];
                 if (url) {
-                urlColumn.push(url);
-                }
-            })
-            .on('end', () => {
-                resolve(urlColumn);
-            })
-            .on('error', (err) => {
-                console.error("error reading file", err);
-                reject(err);
-            });
-    });
-}
-
-/** iterate through csv and return array of position role-titles */
-function parseCsvPositions(path){
-    return new Promise((resolve, reject) => {
-        const urlColumn = [];
-        fs.createReadStream(path)
-            .pipe(csv())
-            .on('data', (row) => {
-                const url = row['Position'];
-                if (url) {
-                urlColumn.push(url);
+                    if (url.endsWith("overlay/about-this-profile/")) {
+                        urlColumn.push(url.slice(0, -27));
+                    } else {
+                        urlColumn.push(url);
+                    }
+                } else {
+                    urlColumn.push("");
                 }
             })
             .on('end', () => {
@@ -116,16 +105,16 @@ function formatName(fullName) {
 
     // removes common prefixes and suffixes
     const prefixesToOmit = ['Dr. ', 'Dr '];
-    const suffixesToOmit = [' CPA', ', CPA', ', Esq.', ' Esq.', ', MBA', ' MBA', ', M.D.', ' M.D.', ' PhD', ' Ph.D', ', PhD', ', Ph.D'];
+    const suffixesToOmit = [' CPA', ', CPA', ',CPA',', Esq.', ' Esq.', ', MBA', ' MBA', ', M.D.', ' M.D.', ' PhD', ' Ph.D', ', PhD', ', Ph.D', ', CFA', ' CFA', ', ', ','];
     for (const prefix of prefixesToOmit) {
         if (fullName.startsWith(prefix)) {
-            fullName = fullName.slice(prefix.length);
+            fullName = fullName.slice(prefix.length).trim();
             break;
         }
     }
     for (const suffix of suffixesToOmit) {
         if (fullName.endsWith(suffix)) {
-            fullName = fullName.slice(0, -suffix.length);
+            fullName = fullName.slice(0, -suffix.length).trim();
         }
     }
     const splitName = fullName.split(" ");
@@ -135,6 +124,23 @@ function formatName(fullName) {
 
     // treat middle initials or additional names as first name
     if (splitName.length > 2) return [splitName.slice(0, splitName.length - 1).join(' '), splitName[splitName.length - 1]];
+}
+
+/** 
+ * helper function to format company name and remove potential suffixes
+ * website.com => website
+ * company, inc => company
+*/
+function formatCompany(companyName) {
+    const suffixesToOmit = [', inc', '.com', ', llc', ', ltd', ', corp', ', ltd.', 'inc.'];
+    for (const suffix of suffixesToOmit) {
+        if (companyName.toLowerCase().endsWith(suffix)) {
+            companyName = companyName.slice(0, -suffix.length);
+        }
+    }
+    // regex to rm stock tickers or anything else in parenthesis
+    companyName = companyName.replace(/\s*\(.*?\)\s*/g, '');
+    return companyName.trim().toLowerCase();
 }
 
 /**
@@ -205,6 +211,7 @@ function formatDateYear(dateString) {
  * "MMM YYYY - MMM YYYY · ..." => "MMM YYYY - MMM YYYY"
  */
 function removeDots(input) {
+    if (!input) return;
     const separatorIndex = input.indexOf(' · ');
     if (separatorIndex !== -1) {
       return input.substring(0, separatorIndex);
@@ -309,40 +316,51 @@ async function extractProfileData(profileUrl, page){
                 // description not required
                 if (textSpans[4]) role.description = await textSpans[4].textContent();;
                 role.company = removeDots(await textSpans[1].textContent());
-                const [startDate, endDate] = formatTenure(await textSpans[2].textContent());
-                role.startDate = startDate;
-                role.endDate = endDate;
+                if (textSpans[2]) {
+                    const [startDate, endDate] = formatTenure(await textSpans[2].textContent());
+                    role.startDate = startDate;
+                    role.endDate = endDate;
+                }
             } else {
                 // no location for role:
                 role.title = await textSpans[0].textContent();
                 // description not required
                 if (textSpans[3]) role.description = await textSpans[3].textContent();;
                 role.company = removeDots(await textSpans[1].textContent());
-                const [startDate, endDate] = formatTenure(await textSpans[2].textContent());
-                role.startDate = startDate;
-                role.endDate = endDate;
+                if (textSpans[2]) {
+                    const [startDate, endDate] = formatTenure(await textSpans[2].textContent());
+                    role.startDate = startDate;
+                    role.endDate = endDate;
+                }
+                
             }
             profile.experience.push(role);
         }
     }
     //extract, format, and save education to profile
-    const educationSection = await page.waitForSelector('section:has(div#education)');
-    // break down each education record by Li
-    const educationLis = await educationSection.$$('li.artdeco-list__item');
-    for (let li of educationLis) {
-        const educationRecord = {};
-        //select text
-        const textSpans = await li.$$('span[aria-hidden="true"]');
-        // schoolName required by LinkedIn, rest optional. extract and save
-        educationRecord.schoolName = await textSpans[0].textContent();
-        if (textSpans[1]) educationRecord.degree = await textSpans[1].textContent();
-        if (textSpans[2]) {
-            const [startYear, endYear] = formatDateYear(await textSpans[2].textContent());
-            educationRecord.startYear = startYear;
-            educationRecord.endYear = endYear;
+    try {
+        const educationSection = await page.waitForSelector('section:has(div#education)', {
+            timeout: 5000
+        });
+        // break down each education record by Li
+        const educationLis = await educationSection.$$('li.artdeco-list__item');
+        for (let li of educationLis) {
+            const educationRecord = {};
+            //select text
+            const textSpans = await li.$$('span[aria-hidden="true"]');
+            // schoolName required by LinkedIn, rest optional. extract and save
+            educationRecord.schoolName = await textSpans[0].textContent();
+            if (textSpans[1]) educationRecord.degree = await textSpans[1].textContent();
+            if (textSpans[2]) {
+                const [startYear, endYear] = formatDateYear(await textSpans[2].textContent());
+                educationRecord.startYear = startYear;
+                educationRecord.endYear = endYear;
+            }
+            if (textSpans[3]) educationRecord.description = await textSpans[3].textContent();
+            profile.education.push(educationRecord);
         }
-        if (textSpans[3]) educationRecord.description = await textSpans[3].textContent();
-        profile.education.push(educationRecord);
+    } catch {
+        console.error(`No education for ${profile.firstName} ${profile.lastName}`)
     }
     return profile;
 }
@@ -350,6 +368,7 @@ async function extractProfileData(profileUrl, page){
 /** upload profiles from csv to a user-specified Thrive search */
 async function compare_roles(){
       // open new browser window
+      console.time("runtime");
       const browser = await chromium.launch({ headless: false });
       const context = await browser.newContext();
       const page = await context.newPage();
@@ -363,25 +382,30 @@ async function compare_roles(){
       
       // parse profile links from csv
       const profileUrls = await parseCsvLinks(csvPath);
-      const profileTitles = await parseCsvPositions(csvPath);
       const profileCompanies = await parseCsvCompanies(csvPath);
-      console.log("profileCompanies: ", profileCompanies)
       const newRoles = [];
       let i = 0;
       for (let profile of profileUrls) {
-        const data = await extractProfileData(profile, page);
-        if (data.experience[0].title !== profileTitles[i] || data.experience[0].company !== profileCompanies[i]) {
-            // new role, report name
-            newRoles.push(data.firstName.concat(" ", data.lastName))
+        if (!profile) {
+            newRoles.push("REVIEW");
         } else {
+            const data = await extractProfileData(profile, page);
+            // title likely not to match due to data input rules, checking for company discrepancy or role enddate:
+            if (formatCompany(data.experience[0].company) !== formatCompany(profileCompanies[i]) || data.experience[0].endDate) {
+            // new role, report
+                newRoles.push("REVIEW");
+            } else {
             // old role, push placeholder to maintain row/column spacing
-            newRoles.push("");
-        }
+                newRoles.push("no change");
+            }
+        }  
+        i+=1;
       }
      
     
     await browser.close();
-    console.log(newRoles);
+    console.log(JSON.stringify(newRoles, null, 2));
+    console.timeEnd("runtime");
     process.exit(0);
 }
 
