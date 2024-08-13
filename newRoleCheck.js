@@ -132,7 +132,7 @@ function formatName(fullName) {
  * company, inc => company
 */
 function formatCompany(companyName) {
-    const suffixesToOmit = [', inc', '.com', ', llc', ', ltd', ', corp', ', ltd.', 'inc.'];
+    const suffixesToOmit = [', inc', '.com', ', llc', ', ltd', ', corp', ', ltd.', ', inc.', ' inc.'];
     for (const suffix of suffixesToOmit) {
         if (companyName.toLowerCase().endsWith(suffix)) {
             companyName = companyName.slice(0, -suffix.length);
@@ -360,7 +360,7 @@ async function extractProfileData(profileUrl, page){
             profile.education.push(educationRecord);
         }
     } catch {
-        console.error(`No education for ${profile.firstName} ${profile.lastName}`)
+        console.log(`No education for ${profile.firstName} ${profile.lastName}`)
     }
     return profile;
 }
@@ -386,25 +386,42 @@ async function compare_roles(){
       const newRoles = [];
       let i = 0;
       for (let profile of profileUrls) {
-        if (!profile) {
-            newRoles.push("REVIEW");
-        } else {
-            const data = await extractProfileData(profile, page);
-            // title likely not to match due to data input rules, checking for company discrepancy or role enddate:
-            if (formatCompany(data.experience[0].company) !== formatCompany(profileCompanies[i]) || data.experience[0].endDate) {
-            // new role, report
+        try{
+            if (!profile) {
                 newRoles.push("REVIEW");
             } else {
-            // old role, push placeholder to maintain row/column spacing
-                newRoles.push("no change");
-            }
-        }  
+                const data = await extractProfileData(profile, page);
+                const currentRoles = data.experience.filter(exp => exp.endDate === null || exp.endDate === undefined);
+                if (!currentRoles) {
+                    newRoles.push("REVIEW");
+                    i+=1;
+                    continue;
+                }
+                const matchFound = currentRoles.some(exp => formatCompany(exp.company) === formatCompany(profileCompanies[i]));
+                if (matchFound) {
+                    newRoles.push("no change");
+                } else {
+                    newRoles.push("REVIEW");
+                }
+                // // title likely not to match due to data input rules, checking for company discrepancy or role enddate:
+                // if (formatCompany(data.experience[0].company) !== formatCompany(profileCompanies[i]) || data.experience[0].endDate) {
+                // // new role, report
+                //     newRoles.push("REVIEW");
+                // } else {
+                // // old role, push placeholder to maintain row/column spacing
+                //     newRoles.push("no change");
+                // }
+            }  
+        } catch (err) {
+            console.error(`Error extracting from ${profile} `, err);
+            newRoles.push("ERROR, REVIEW");
+        }
         i+=1;
+        process.stdout.write(`\r${i} profiles reviewed`);
       }
-     
-    
     await browser.close();
     console.log(JSON.stringify(newRoles, null, 2));
+    console.log("\nComplete!");
     console.timeEnd("runtime");
     process.exit(0);
 }
