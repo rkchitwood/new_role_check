@@ -29,7 +29,8 @@
     $ echo "const LI_PASSWORD='your_LI_password';" >> secret.js
     $ echo "module.exports={LI_EMAIL, LI_PASSWORD};" >> secret.js
 
-    # download Excel or Google Sheet to CSV format (ensure there is a 'LinkedIn URL' column - can use AppScripts to extract if needed.
+    # download Excel or Google Sheet to CSV format
+    # (ensure there is a 'LinkedIn URL' column - can use AppScripts to extract if needed.
     # setup complete, run:
     $ node newRoleCheck.js path/to/your/csv
     ```
