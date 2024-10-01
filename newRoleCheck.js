@@ -19,12 +19,12 @@ const LI_LOGIN_URL = "https://www.linkedin.com/login";
 const csvPath = process.argv[2];
 
 if (csvPath === '--help'){
-    console.log("Script will iterate through CSV, uploading profiles to designated search (likely path: /users/username/Downloads/csvName.csv). Usage: node newRoleCheck.js searchName path/to/csv");
+    console.log("Script will iterate through CSV (likely path: /users/username/Downloads/csvName.csv). Usage: node newRoleCheck.js path/to/csv");
     process.exit(0);
 }
 
 if (!csvPath) {
-    console.error('Error: missing arguments. Usage: node uploadProfiles.js searchName path/to/csv');
+    console.error('Error: missing arguments. Usage: node uploadProfiles.js path/to/csv');
     process.exit(1);
   }
 
