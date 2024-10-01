@@ -16,8 +16,7 @@ const csv = require('csv-parser');
 const {LI_EMAIL, LI_PASSWORD} = require('./secret');
 const LI_LOGIN_URL = "https://www.linkedin.com/login";
 
-//extract cmnd line arguments (ONLY WORKS FOR RYAN FOR DEV, RM STRING LITERAL FOR PROD)
-const csvPath = `/Users/ryanchitwood/Downloads/${process.argv[2]}`;
+const csvPath = process.argv[2];
 
 if (csvPath === '--help'){
     console.log("Script will iterate through CSV, uploading profiles to designated search (likely path: /users/username/Downloads/csvName.csv). Usage: node newRoleCheck.js searchName path/to/csv");
